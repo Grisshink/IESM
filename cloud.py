@@ -141,6 +141,8 @@ class Connection:
         if 'value' in data and len(data['value']) > 256:
             raise ValueError(f'Length of payload too long: {len(data["value"])}/256')
 
+        while self.reconnect: time.sleep(1)
+
         self.ws.send(json.dumps(data) + "\n")
 
     def add_cloud_var(self, name: str) -> bool:
