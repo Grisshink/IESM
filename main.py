@@ -28,11 +28,14 @@ class ChatGUI:
                  password: str,
                  room_name: str,
                  project_id: int,
-                 encoding: str) -> None:
-        self.session_id = cloud.login(username, password)
+                 encoding: str,
+                 connection_type: str) -> None:
         self.username = username
-        print('Got session id! Loading websocket...')
-        self.ws = cloud.Connection(project_id, username, self.session_id, room_name, encoding)
+        self.encoding = encoding
+        
+        self.session_id = cloud.login(username, password) if connection_type == 'Scratch' else None
+        print('Loading websocket...')
+        self.ws = cloud.Connection(project_id, username, self.session_id, room_name, encoding, connection_type)
         print('Websocket success! Spawning window...')
 
         self.win = Toplevel(win)
@@ -106,7 +109,7 @@ class ChatGUI:
                 icon=messagebox.ERROR,
             ).show()
         except NameError:
-            length = len(full_message.encode(encoding=cloud.ENCODING))
+            length = len(full_message.encode(encoding=self.encoding))
             messagebox.Message(
                 message=f'Слишком длинное сообщение!\nЗанято {length} из 79 байт в пакете', 
                 parent=win,
@@ -195,7 +198,29 @@ class LoginScreen:
         self.encoding_combo.set('iso8859_5')
         self.encoding_combo.pack(side='top')
 
+        ttk.Label(self.form_frame, text='Тип соединения:').pack(side='top', anchor='w')
+        self.connection_type = StringVar()
+        self.connection_type.set('Scratch')
+        ttk.Radiobutton(
+            self.form_frame, 
+            text='Scratch', value='Scratch', 
+            variable=self.connection_type,
+            command=self.set_password_state,
+        ).pack(side='top', anchor='w')
+        ttk.Radiobutton(
+            self.form_frame, 
+            text='Turbowarp', value='Turbowarp', 
+            variable=self.connection_type,
+            command=self.set_password_state,
+        ).pack(side='top', anchor='w')
+
         ttk.Button(self.form_frame, text="Вход", command=self.chat_app).pack(side='bottom')
+
+    def set_password_state(self):
+        if self.connection_type.get() == 'Scratch':
+            self.password_label.configure(state='normal')
+        else:
+            self.password_label.configure(state='disabled')
 
     def chat_app(self):
         global current_frame
@@ -204,8 +229,17 @@ class LoginScreen:
         password = self.password_label.get()
         room_name = self.room_label.get()
         encoding = self.encoding_combo.get()
+        connection_type = self.connection_type.get()
 
-        if username == '' or password == '':
+        if username == '':
+            messagebox.Message(
+                message='Заполните все поля, чтобы продолжить', 
+                parent=win,
+                icon=messagebox.ERROR
+            ).show()
+            return
+
+        if password == '' and connection_type == 'Scratch':
             messagebox.Message(
                 message='Заполните все поля, чтобы продолжить', 
                 parent=win,
@@ -223,7 +257,7 @@ class LoginScreen:
             ).show()
             return
 
-        ChatGUI(username, password, room_name, project_id, encoding)
+        ChatGUI(username, password, room_name, project_id, encoding, connection_type)
 
 current_frame = LoginScreen()
 win.mainloop()

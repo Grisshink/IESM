@@ -16,7 +16,6 @@ headers = {
     "referer": "https://scratch.mit.edu",
 }
 
-url = 'wss://clouddata.scratch.mit.edu'
 PROTOCOL_VERSION = bytes([1])
 
 def to_bytes(value: int) -> bytes:
@@ -76,9 +75,10 @@ class Connection:
     def __init__(self, 
                  project_id: int, 
                  username: str, 
-                 session_id: str, 
+                 session_id: str | None, 
                  room_name: str,
-                 encoding: str) -> None:
+                 encoding: str,
+                 connection_type: str) -> None:
         self.project_id = project_id
         self.username = username
         self.session_id = session_id
@@ -87,17 +87,27 @@ class Connection:
         self.room_hash = hashlib.sha256(self.room_name.encode()).digest()
         self.encoding = encoding
         self.reconnect = False
+        self.connection_type = connection_type
         self.connect()
 
     def connect(self):
         self.reconnect = True
         self.ws = websocket.WebSocket()
-        self.ws.connect(
-            url,
-            cookie="scratchsessionsid=" + self.session_id + ";",
-            origin="https://scratch.mit.edu",
-            enable_multithread=True,
-        )
+
+        if self.connection_type == 'Scratch':
+            if self.session_id is None: return
+            self.ws.connect(
+                'wss://clouddata.scratch.mit.edu',
+                cookie="scratchsessionsid=" + self.session_id + ";",
+                origin="https://scratch.mit.edu",
+                enable_multithread=True,
+            )
+        else:
+            self.ws.connect(
+                'wss://clouddata.turbowarp.org/',
+                enable_multithread=True,
+                header=["User-Agent: Grisshink/IESM proto-ver/{PROTOCOL_VERSION[0]}"]
+            )
 
         self.send_packet({ "method": "handshake", "user": self.username, "project_id": self.project_id })
         self.reconnect = False
@@ -115,7 +125,7 @@ class Connection:
 
     def set_variable(self, value: bytes):
         if self.ws is None: raise WsClosedError('Websocket not initialised!')
-        if len(value) > 79: raise NameError('Message too long!')
+        if self.connection_type == 'Scratch' and len(value) > 79: raise NameError('Message too long!')
         if len(self.known_vars) == 0: raise NoVarError('No known vars!')
 
         cipher = AES.new(self.room_hash, AES.MODE_CBC)
@@ -134,12 +144,12 @@ class Connection:
             "name": random.choice(list(self.known_vars)),
             "value": str(inp),
             "user": self.username,
-            "project_id": self.project_id,
+            "project_id": str(self.project_id),
         })
 
     def send_packet(self, data):
         if self.ws is None: raise WsClosedError('Websocket not initialised!')
-        if 'value' in data and len(data['value']) > 256:
+        if 'value' in data and self.connection_type == 'Scratch' and len(data['value']) > 256:
             raise ValueError(f'Length of payload too long: {len(data["value"])}/256')
 
         self.ws.send(json.dumps(data) + "\n")
@@ -176,8 +186,9 @@ class Connection:
             print(f'Got binary: {r}')
             return out
         
+        print(r)
         split_data = r.split('\n')
-        split_data.pop()
+        if split_data[-1] == '': split_data.pop()
         print(split_data)
         for packet in split_data:
             data = json.loads(packet)
