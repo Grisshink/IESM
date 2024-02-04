@@ -1,4 +1,3 @@
-import traceback
 import requests
 import json
 import websocket
@@ -128,6 +127,8 @@ class Connection:
 
         inp = int((PROTOCOL_VERSION + hashval + blob).hex(), 16)
 
+        while self.reconnect: time.sleep(1)
+
         self.send_packet({
             "method": "set",
             "name": random.choice(list(self.known_vars)),
@@ -140,8 +141,6 @@ class Connection:
         if self.ws is None: raise WsClosedError('Websocket not initialised!')
         if 'value' in data and len(data['value']) > 256:
             raise ValueError(f'Length of payload too long: {len(data["value"])}/256')
-
-        while self.reconnect: time.sleep(1)
 
         self.ws.send(json.dumps(data) + "\n")
 
@@ -179,6 +178,7 @@ class Connection:
         
         split_data = r.split('\n')
         split_data.pop()
+        print(split_data)
         for packet in split_data:
             data = json.loads(packet)
 
