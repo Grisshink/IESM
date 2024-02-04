@@ -1,3 +1,4 @@
+import traceback
 import requests
 import json
 import websocket
@@ -18,8 +19,6 @@ headers = {
 
 url = 'wss://clouddata.scratch.mit.edu'
 PROTOCOL_VERSION = bytes([1])
-
-ENCODING = 'cp1251'
 
 def to_bytes(value: int) -> bytes:
     out = []
@@ -88,7 +87,11 @@ class Connection:
         self.room_name = room_name
         self.room_hash = hashlib.sha256(self.room_name.encode()).digest()
         self.encoding = encoding
+        self.reconnect = False
+        self.connect()
 
+    def connect(self):
+        self.reconnect = True
         self.ws = websocket.WebSocket()
         self.ws.connect(
             url,
@@ -98,6 +101,7 @@ class Connection:
         )
 
         self.send_packet({ "method": "handshake", "user": self.username, "project_id": self.project_id })
+        self.reconnect = False
 
     def close(self):
         if self.ws is None: raise WsClosedError('Websocket already closed!')
@@ -152,7 +156,21 @@ class Connection:
         if self.ws is None: raise WsClosedError('Websocket not initialised')
         out = None
 
-        r = self.ws.recv()
+        try:
+            r = self.ws.recv()
+        except websocket.WebSocketConnectionClosedException:
+            try:
+                self.reconnect = True
+                time.sleep(0.5)
+                self.connect()
+                r = self.ws.recv()
+                out = 'Переподключение успешно\n'
+            except:
+                time.sleep(1)
+                self.connect()
+                r = self.ws.recv()
+                out = 'Переподключение успешно\n'
+
         if not isinstance(r, str):
             print(f'Got binary: {r}')
             return out
